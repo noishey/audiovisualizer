@@ -28,7 +28,7 @@ const params = {
     // Media controls defaults
     bgImageUrl: '',
     audioUrl: 'https://samplelib.com/lib/preview/mp3/sample-12s.mp3',
-    foreground: true,
+    foreground: false,
     foregroundOpacity: 1.0
 }
 
@@ -141,9 +141,17 @@ audioFileInput.accept = 'audio/*';
 audioFileInput.style.display = 'none';
 document.body.appendChild(audioFileInput);
 
+// Foreground image file input
+const fgFileInput = document.createElement('input');
+fgFileInput.type = 'file';
+fgFileInput.accept = 'image/*';
+fgFileInput.style.display = 'none';
+document.body.appendChild(fgFileInput);
+
 // Track current object URLs to revoke when replaced
 let currentBgObjectUrl = null;
 let currentAudioObjectUrl = null;
+let currentFgObjectUrl = null;
 
 // Foreground overlay image element
 const overlayImg = document.createElement('img');
@@ -179,7 +187,6 @@ mediaFolder.add({
             document.body.style.backgroundImage = '';
             document.body.style.backgroundSize = '';
             document.body.style.backgroundPosition = '';
-            setForegroundImage('');
             return;
         }
         const loader = new THREE.TextureLoader();
@@ -192,8 +199,6 @@ mediaFolder.add({
                 document.body.style.backgroundImage = `url(${params.bgImageUrl})`;
                 document.body.style.backgroundSize = 'cover';
                 document.body.style.backgroundPosition = 'center';
-                // Bring image to foreground overlay
-                setForegroundImage(params.bgImageUrl);
             },
             undefined,
             function() {
@@ -201,7 +206,6 @@ mediaFolder.add({
                 document.body.style.backgroundImage = `url(${params.bgImageUrl})`;
                 document.body.style.backgroundSize = 'cover';
                 document.body.style.backgroundPosition = 'center';
-                setForegroundImage(params.bgImageUrl);
             }
         );
     }
@@ -229,16 +233,32 @@ bgFileInput.addEventListener('change', function() {
             document.body.style.backgroundImage = `url(${objectUrl})`;
             document.body.style.backgroundSize = 'cover';
             document.body.style.backgroundPosition = 'center';
-            setForegroundImage(objectUrl);
         },
         undefined,
         function() {
             document.body.style.backgroundImage = `url(${objectUrl})`;
             document.body.style.backgroundSize = 'cover';
             document.body.style.backgroundPosition = 'center';
-            setForegroundImage(objectUrl);
         }
     );
+});
+
+// Foreground selection from local PC
+mediaFolder.add({
+    selectForeground: function() {
+        fgFileInput.click();
+    }
+}, 'selectForeground').name('Select Foreground');
+
+fgFileInput.addEventListener('change', function() {
+    const file = fgFileInput.files && fgFileInput.files[0];
+    if (!file) return;
+    if (currentFgObjectUrl) {
+        try { URL.revokeObjectURL(currentFgObjectUrl); } catch (e) {}
+    }
+    const objectUrl = URL.createObjectURL(file);
+    currentFgObjectUrl = objectUrl;
+    setForegroundImage(objectUrl);
 });
 
 mediaFolder.add(params, 'audioUrl').name('Audio URL');
