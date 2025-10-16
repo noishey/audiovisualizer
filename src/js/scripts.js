@@ -5,7 +5,7 @@ import {UnrealBloomPass} from 'three/examples/jsm/postprocessing/UnrealBloomPass
 import {OutputPass} from 'three/examples/jsm/postprocessing/OutputPass';
 import backgroundImg from '../assets/images/background.png';
 import foregroundImg from '../assets/images/foreground.png';
-import sampleAudio from '../assets/audio/sample.mp3';
+// Removed sampleAudio import - no longer needed
 
 const renderer = new THREE.WebGLRenderer({antialias: true, alpha: true});
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -75,29 +75,23 @@ mesh.material.wireframe = true;
 // Make mesh visible since strength is now fixed at 0.27 (> 0)
 mesh.visible = true;
 
-const listener = new THREE.AudioListener();
-camera.add(listener);
+// Removed all audio loading components:
+// - THREE.AudioListener
+// - THREE.Audio
+// - THREE.AudioLoader
+// - handleAudioBuffer function
+// - loadAudio function
+// - THREE.AudioAnalyser
+// - calculateRMS function
 
-const sound = new THREE.Audio(listener);
+// External RMS variable to receive values from JUCE webapp
+let externalRMS = 0.0;
 
-const audioLoader = new THREE.AudioLoader();
-
-function handleAudioBuffer(buffer) {
-    sound.setBuffer(buffer);
-    sound.setLoop(true);
-    sound.setVolume(0.5);
-    sound.play();
-    console.log('Audio loaded and playing');
-}
-
-function loadAudio(url) {
-  try {
-    if (sound.isPlaying) sound.stop();
-  } catch (e) {}
-  audioLoader.load(url, handleAudioBuffer);
-}
-
-const analyser = new THREE.AudioAnalyser(sound, 32);
+// Global function to update RMS from external source (JUCE webapp)
+window.updateRMS = function(rmsValue) {
+    externalRMS = parseFloat(rmsValue) || 0.0;
+    console.log('RMS updated from external source:', externalRMS);
+};
 
 // Auto-load background and foreground images
 // Load background image using CSS DOM loading (original image as uploaded)
@@ -145,8 +139,9 @@ img.onload = function() {
 img.src = backgroundImg;
 
 // Auto-load sample audio
-console.log('Loading sample audio:', sampleAudio);
-loadAudio(sampleAudio);
+// Removed audio loading call:
+// console.log('Loading sample audio:', sampleAudio);
+// loadAudio(sampleAudio);
 
 // Create and auto-load foreground overlay
 const overlayImg = document.createElement('img');
@@ -179,7 +174,12 @@ function animate() {
 	camera.position.y += (-mouseY - camera.position.y) * 0.5;
 	camera.lookAt(scene.position);
 	uniforms.u_time.value = clock.getElapsedTime();
-	uniforms.u_frequency.value = analyser.getAverageFrequency();
+	
+	// Use external RMS value from JUCE webapp instead of calculated RMS
+	// The externalRMS value should be in a normalized range (0.0 to 1.0)
+	// Scale it for better visual effect
+	uniforms.u_frequency.value = externalRMS * 100; // Scale up for dramatic effect
+	
     bloomComposer.render();
 	requestAnimationFrame(animate);
 }
