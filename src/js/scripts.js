@@ -3,14 +3,16 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass";
-import backgroundImg from "../assets/images/background.png";
-import foregroundImg from "../assets/images/foreground.png";
-// Removed sampleAudio import - no longer needed
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(0x000000, -1); // Transparent clear color
-document.body.appendChild(renderer.domElement);
+const pillFrame = document.getElementById("pillFrame");
+
+// Set renderer to pillFrame size
+renderer.setSize(pillFrame.clientWidth, pillFrame.clientHeight);
+pillFrame.appendChild(renderer.domElement);
+
+// Make renderer transparent (so background image shows through)
+renderer.setClearColor(0x000000, 0); // alpha = 0
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -41,6 +43,8 @@ const outputPass = new OutputPass();
 bloomComposer.addPass(outputPass);
 
 camera.position.set(0, -2, 14);
+camera.aspect = pillFrame.clientWidth / pillFrame.clientHeight;
+camera.updateProjectionMatrix();
 camera.lookAt(0, 0, 0);
 
 const uniforms = {
@@ -70,15 +74,6 @@ mesh.material.wireframe = true;
 // Make mesh visible since strength is now fixed at 0.27 (> 0)
 mesh.visible = true;
 
-// Removed all audio loading components:
-// - THREE.AudioListener
-// - THREE.Audio
-// - THREE.AudioLoader
-// - handleAudioBuffer function
-// - loadAudio function
-// - THREE.AudioAnalyser
-// - calculateRMS function
-
 // External RMS variable to receive values from JUCE webapp
 let externalRMS = 0.0;
 
@@ -88,76 +83,80 @@ window.updateRMS = function (rmsValue) {
     console.log("RMS updated from external source:", externalRMS);
 };
 
-// Auto-load background and foreground images
-// Load background image using CSS DOM loading (original image as uploaded)
-document.body.style.backgroundImage = `url("${backgroundImg}")`;
-document.body.style.backgroundSize = "cover";
-document.body.style.backgroundPosition = "center";
-document.body.style.backgroundRepeat = "no-repeat";
-document.body.style.backgroundAttachment = "fixed";
-console.log("Background CSS applied:", document.body.style.backgroundImage);
+// Dynamically set background and foreground from JUCE
+window.setBackgroundImage = function (url) {
+    console.log("Background image received from JUCE:", url);
 
-// Extract random RGB values from background image for visualizer
-const canvas = document.createElement("canvas");
-const ctx = canvas.getContext("2d");
-const img = new Image();
-img.crossOrigin = "anonymous";
-img.onload = function () {
-    canvas.width = img.width;
-    canvas.height = img.height;
-    ctx.drawImage(img, 0, 0);
+    // Update background via CSS
+    document.getElementById("pillFrame").style.backgroundImage = `url("${url}")`;
 
-    // Get random pixel from the image
-    const randomX = Math.floor(Math.random() * img.width);
-    const randomY = Math.floor(Math.random() * img.height);
-    const pixelData = ctx.getImageData(randomX, randomY, 1, 1).data;
+    // Extract colors from background for shader
+    // Extract bright colors from background for shader
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = function () {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
 
-    // Extract RGB values
-    const extractedRed = pixelData[0];
-    const extractedGreen = pixelData[1];
-    const extractedBlue = pixelData[2];
+        const pixelCount = 1000; // number of random samples
+        const brightPixels = [];
 
-    console.log(`Extracted RGB from background: R:${extractedRed}, G:${extractedGreen}, B:${extractedBlue}`);
+        // Collect multiple bright pixels
+        for (let i = 0; i < pixelCount; i++) {
+            const x = Math.floor(Math.random() * img.width);
+            const y = Math.floor(Math.random() * img.height);
+            const data = ctx.getImageData(x, y, 1, 1).data;
 
-    // Update visualizer parameters with extracted colors
-    params.red = extractedRed;
-    params.green = extractedGreen;
-    params.blue = extractedBlue;
+            // Calculate brightness (luminance)
+            const brightness = 0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2];
 
-    // Update shader uniforms
-    uniforms.u_red.value = params.red / 255;
-    uniforms.u_green.value = params.green / 255;
-    uniforms.u_blue.value = params.blue / 255;
+            // Keep only bright pixels (threshold ~180/255)
+            if (brightness > 180) {
+                brightPixels.push(data);
+            }
+        }
 
-    console.log(`Visualizer colors updated: R:${params.red}, G:${params.green}, B:${params.blue}`);
+        let pixelData;
+        if (brightPixels.length > 0) {
+            // Choose a random bright pixel
+            pixelData = brightPixels[Math.floor(Math.random() * brightPixels.length)];
+        } else {
+            // Fallback: if no bright pixel found, use the last random one
+            const randomX = Math.floor(Math.random() * img.width);
+            const randomY = Math.floor(Math.random() * img.height);
+            pixelData = ctx.getImageData(randomX, randomY, 1, 1).data;
+        }
+
+        // Apply to shader
+        params.red = pixelData[0];
+        params.green = pixelData[1];
+        params.blue = pixelData[2];
+
+        uniforms.u_red.value = params.red / 255;
+        uniforms.u_green.value = params.green / 255;
+        uniforms.u_blue.value = params.blue / 255;
+
+        console.log(`Visualizer colors (bright) updated from JUCE background: R:${params.red}, G:${params.green}, B:${params.blue}`);
+    };
+    img.src = url;
 };
-img.src = backgroundImg;
 
-// Auto-load sample audio
-// Removed audio loading call:
-// console.log('Loading sample audio:', sampleAudio);
-// loadAudio(sampleAudio);
+window.setForegroundImage = function (url) {
+    console.log("Foreground image received from JUCE:", url);
 
-// Create and auto-load foreground overlay
-const overlayImg = document.createElement("img");
-overlayImg.src = foregroundImg;
-overlayImg.style.position = "fixed";
-overlayImg.style.left = "0";
-overlayImg.style.top = "0";
-overlayImg.style.width = "100%";
-overlayImg.style.height = "100%";
-overlayImg.style.objectFit = "cover";
-overlayImg.style.zIndex = "5";
-overlayImg.style.pointerEvents = "none";
-overlayImg.style.opacity = "0.85";
-overlayImg.style.display = "block";
-document.body.appendChild(overlayImg);
+    // Otherwise create it
+    const overlayImg = document.getElementById("foregroundImg");
+    overlayImg.src = url;
+};
 
 let mouseX = 0;
 let mouseY = 0;
 document.addEventListener("mousemove", function (e) {
-    let windowHalfX = window.innerWidth / 2;
-    let windowHalfY = window.innerHeight / 2;
+    let windowHalfX = document.body.clientWidth / 2;
+    let windowHalfY = document.body.clientHeight / 2;
     mouseX = (e.clientX - windowHalfX) / 100;
     mouseY = (e.clientY - windowHalfY) / 100;
 });
@@ -170,6 +169,10 @@ window.fromJUCE = function (msg) {
     if (msg.type === "rmsChange" && msg.value) {
         externalRMS = parseFloat(msg.value) || 0.0;
         console.log("RMS updated from external source:", externalRMS);
+    } else if (msg.type === "foregroundImg" && msg.path) {
+        setForegroundImage(msg.path);
+    } else if (msg.type === "backgroundImg" && msg.path) {
+        setBackgroundImage(msg.path);
     }
 };
 
@@ -180,7 +183,7 @@ function animate() {
     camera.lookAt(scene.position);
     uniforms.u_time.value = clock.getElapsedTime();
 
-    // Use external RMS value from JUCE webapp instead of calculated RMS
+    // Use external RMS value from JUCE app
     // The externalRMS value should be in a normalized range (0.0 to 1.0)
     // Scale it for better visual effect
     uniforms.u_frequency.value = externalRMS * 100; // Scale up for dramatic effect
@@ -191,8 +194,8 @@ function animate() {
 animate();
 
 window.addEventListener("resize", function () {
-    camera.aspect = window.innerWidth / window.innerHeight;
+    renderer.setSize(pillFrame.clientWidth, pillFrame.clientHeight);
+    camera.aspect = pillFrame.clientWidth / pillFrame.clientHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    bloomComposer.setSize(window.innerWidth, window.innerHeight);
+    bloomComposer.setSize(pillFrame.clientWidth, pillFrame.clientHeight);
 });
